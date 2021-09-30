@@ -1,0 +1,1089 @@
+# Blueprint
+## 1. Setting up a cloud solution environment
+  - 1.1. Setting up cloud projects and accounts. Activities include:
+    - Creating projects
+      - `gcloud projects list`
+      - `gcloud projects create <id> --folder=<folder> --labels=<key=value> --name=<name> --organization=<org> --set-as-default`
+      - `gcloud projects describe <id>`
+      - in console > `iam` > `manage resources`
+      - can also be done from the console header (at project selection)
+      - can group projects in folders & apply policies there
+    - Assigning users to predefined IAM roles within a project
+      - `gcloud projects add-iam-policy-binding <project ID> --member=user:user@domain.com --role=roles/viewer`
+      - same with `remove-iam-policy-binding`
+    - Managing users in Cloud Identity (manually and automated)
+      - Identity as a Service + endpoint management
+      - similar to Google Apps (now Workspace)
+      - manages users, apps & devices from a central location
+      - requires organization & custom domain
+      - 2 editions: Free and Premium
+    - Enabling APIs within projects
+      - `gcloud services list [--available | --enabled]`
+      - `gcloud services enable compute.googleapis.com`
+    - Provisioning one or more Stackdriver workspaces
+      - in console > `monitoring`
+      - Stackdriver workspaces seem not to exist anymore..
+      - metrics scope can include one or more projects, from different organizations or even from AWS
+  - 1.2 Managing billing configuration. Activities include:
+    - Creating one or more billing accounts
+      - in console > `Billing` > `manage billing accounts` > `create account`
+      - `gcloud beta billing accounts list`
+    - Linking projects to a billing account
+      - in console > `billing` > `my projects` > `actions` > `change billing`
+      - `gcloud beta billing projects link <project ID> --billing-account=<billing account ID>`
+      - `gcloud beta billing projects list --billing-account=<billing account ID>`
+    - Establishing billing budgets and alerts
+      - requires budget API (`billingbudgets.googleapis.com`) to be enabled on project
+      - in console, > `billing` > `budgets and alerts`
+      - `gcloud billing budgets list --billing-account=<billing account iD>`
+      - `gcloud billing budgets create --billing-account=<billing account iD> --display-name=<name> --filter-project=projects/<project ID> --budget-amount=<amount>EUR [..]`
+      - `gcloud billing budgets delete <budget ID> --billing-account=<billing account ID>`
+      - sends email to billing admins & users by default
+      - can filter on projects, services, labels, ..
+    - Setting up billing exports to estimate daily/monthly charges
+      - exports daily cost detail & pricing data to BigQuery
+      - updated daily (pricing) or at regular interval (daily cost)
+      - requires data sets to be created upfront; recommendation is to have a dedicated project for this
+      - pricing data export requires BigQuery Data Transfer API (`bigquerydatatransfer.googleapis.com`) to be enabled
+      - in console > `billing` > `billing export`
+  - 1.3 Installing and configuring the command line interface (CLI), specifically the Cloud SDK (e.g., setting the default project).
+    - `gcloud config set core/project <project ID>`
+
+## 2. Planning and configuring a cloud solution
+- 2.1 Planning and estimating GCP product use using the Pricing Calculator
+  - https://cloud.google.com/products/calculator
+- 2.2 Planning and configuring compute resources. Considerations include:
+  - Selecting appropriate compute choices for a given workload (e.g., Compute Engine, Google Kubernetes Engine, App Engine, Cloud Run, Cloud Functions)
+    - Compute Engine: regular VMs
+    - GKE: containers (K8s managed)
+    - App Engine: 
+      - complex serverless applications
+      - runs continuously
+    - Cloud Run: stateless containers (Knative)
+      - invoked via HTTP reqs
+      - billed to the nearest 100ms
+    - Cloud Functions: functions as a service (Faas) - eq. Lambda
+      - event driven standalone functions
+      - automatic scale
+      - support Node.js, Go, Python & Java
+      - integrated logging & monitoring
+      - billed to the nearest 100ms
+  - Using preemptible VMs and custom machine types as appropriate
+    - preemptible VMs (eq. to Spot instances)
+      - excess compute engine capacity
+      - much lower price than normal instances
+      - compute engine might stop them if it requires access to those resources
+      - always stopped after they run for 24h
+      - not covered by any SLA
+- 2.3 Planning and configuring data storage options. Considerations include:
+  - Product choice (e.g., Cloud SQL, BigQuery, Cloud Spanner, Cloud Bigtable)
+    - Cloud SQL: relational DB service - MySQL, SQL Server or PostgreSQL (eq. RDS)
+      - automatic replication, backup & failover
+    - BigQuery: serverless data warehouse for analytics using SQL (eq. RedShift + Athena)
+    - Cloud Spanner: massive data solution, strongly consistent with horizontal scaling, global availability
+    - Cloud BigTable: NoSQL database (eq. DynamoDB)
+  - Choosing storage options (e.g., Standard, Nearline, Coldline, Archive)
+    - Standard: no min, frequently accessed data or stored for brief periods of time
+    - Nearline: 30d min, infrequently accessed data
+    - Coldline: 90d min, infrequently accessed data
+    - Archive: 365d min, data archiving, online backup or DRP (data is available immediately)
+- 2.4 Planning and configuring network resources. Tasks include:
+  - Differentiating load balancing options
+    - external HTTPS: global proxy-based L7 load balancer
+      - runs service behind a single external IP
+      - distributes HTTP & HTTPS to GCE or GKE
+    - internal HTTPS: same as external HTTPS, but accessible on an internal IP (regional!)
+    - internal TCP/UDP (Network): pass-through load balancer
+      - regional scope
+      - supports TCP, UDP, ESP and ICMP
+      - responses from backend go directly to clients (direct server return)
+    - SSL proxy: distributes SSL traffic to VM instances
+  - Identifying resource locations in a network for availability
+  - Configuring Cloud DNS
+    - create zone with `gcloud dns managed-zones create <name> --dns-name=<domain> --visibility=<private|public>`
+    - manage records
+      - start transaction with `gcloud dns record-sets transaction start --zone=<name>`
+      - make changes with `gcloud dns record-sets transaction add <data> --name=<dns name> --type=<type> --zone=<zone>`
+      - commit changes with `gcloud dns record-sets transaction execute --zone=<name>`
+    - possibility to import and export BIND zone files `gcloud dns record-sets export <zone> --zone-file-format`
+
+## 3. Deploying and implementing a cloud solution
+- 3.1 Deploying and implementing Compute Engine resources. Tasks include:
+  - Launching a compute instance using Cloud Console and Cloud SDK (gcloud) (e.g., assign disks, availability policy, SSH keys)
+    - `gcloud compute instances create <name> --machine-type=<type> --zone=<zone> --labels=<labels> --metadata=<key>=<value> --tags=<tag>`
+    - create persistent disk with `--create-disk=name=<name>,image=<image>,size=<size>,..`
+    - attach existing disk with `--disk=name=<name>,boot=<boot>,scope=<scope>,..`
+    - attach to network with `--network=<network>`, optionally with `--subnet=<subnet>`
+    - add extra interface with `--network-interface=address=<addr>,network=<net>,subnet=<subnet>`
+  - Creating an autoscaled managed instance group using an instance template
+  - Generating/uploading a custom SSH key for instances
+    - generate custom key with `ssh-keygen -f <file> -C <user>`
+    - upload the SSH public key by editing metadata (project or instance)
+      - console > `compute engine` > `metadata`
+      - project: `gcloud compute project-info add-metadata --metadata=ssh-keys='<user>:ssh-rsa <key> <user>'`
+      - instance: `gcloud compute instances create <name> --metadata=ssh-keys='..'` or,
+      - `gcloud compute instances add-metadata <name> --metadata=ssh-keys='..'`
+      - don't forget to chmod 400 the private key
+      - `ssh -i <key> -l <user> <instance>`
+  - Configuring a VM for Stackdriver monitoring and logging
+  - Assessing compute quotas and requesting increases
+    - not all projects have the same quota
+    - quota might increase as you use GCP over time
+    - VM instances are part of regional quota
+    - check regional quota with `gcloud compute regions describe <region>`
+    - check project quota with `gcloud compute project-info describe --project <project ID>`
+    - console > `IAM` > `quotas` - can request quota update from there
+  - Installing the Stackdriver Agent for monitoring and logging
+    - monitoring
+      - download install script: `curl -sSO https://dl.google.com/cloudagents/add-monitoring-agent-repo.sh`
+      - install package: `sudo bash add-monitoring-agent-repo.sh --also-install`
+      - check: `sudo service stackdriver-agent status`
+    - logging
+      - download install script: `curl -sSO https://dl.google.com/cloudagents/add-logging-agent-repo.sh`
+      - install: `sudo bash add-logging-agent-repo.sh --also-install`
+      - check: `sudo service google-fluentd status`
+    - can also be installed from the monitoring dashboard (in VM instances)
+    - can also be installed using gcloud (ops-agent) or using automation tools (Terraform, Ansible, Puppet, ..)
+
+- 3.2 Deploying and implementing Google Kubernetes Engine resources. Tasks include:
+  - Deploying a Google Kubernetes Engine cluster
+    - two modes: standard and Autopilot (pay per pod)
+    - cluster can be zonal or regional
+    - requires GKE API to be enabled (`container.googleapis.com`)
+    - `gcloud container clusters create <name> --num-nodes=1` (standard)
+    - `gcloud container clusters create-auto <name>` (Autopilot)
+      - set version with `--cluster-version`
+      - set nodes type with `--machine-type=<type>`
+      - set control plane location with `--zone=<zone>` (zonal)
+      - set control plane region with `--region=<region>` (regional)
+      - set worker nodes location with `--node-locations=<zone>,..`
+      - can set private clusters with `--enable-private-nodes`, `--enable-private-endpoint` and optionally `--enable-master-authorized-networks`
+    - `gcloud container clusters list`
+    - `gcloud container clusters get-credentials <name>` -- writes to KUBECONFIG
+    - can resize a cluster manually (using `clusters resize`) or automatically (with Cluster Autoscaler)
+      - use `--enable-autoscaling` with `--min-nodes=X` and `--max-nodes=Y`
+  - Deploying a container application to Google Kubernetes Engine using pods
+    - `kubectl create deployment <name> --image=<image>`
+    - `kubectl expose deployment <name> --type=LoadBalancer --port=<port> --target-port=<container port>`
+  - Configuring Google Kubernetes Engine application monitoring and logging
+    - use `--enable-stackdriver-kubernetes` during cluster creation, or
+    - enable it with `gcloud container clusters update <name> --enable-stackdriver-kubernetes`
+    - enabled by default
+    - console > `GKE` > select workload (e.g. Pod) > `Container Logs`
+    - `gcloud logging read 'resource.type=k8s_pod AND resource.labels.namespace_name=default'`
+    - resource types:
+      - `k8s_cluster`: cluster logs (API logs)
+      - `k8s_node`: node pools logs
+      - `k8s_pod`: pod events (pulling image, scheduled to node X, ..)
+      - `k8s_container`: application logs
+
+- 3.3 Deploying and implementing App Engine, Cloud Run, and Cloud Functions resources. Tasks include, where applicable:
+  - Deploying an application, updating scaling configuration, versions, and traffic splitting
+    - App Engine
+      - deploy using `gcloud app deploy` (with `--quiet` to disable confirmation prompt)
+      - creates a new version at every deployment (can overide name with `--version`)
+      - use `gcloud app versions list` to list versions
+      - uses the `app.yaml` file to describe the environment, including
+        - runtime (e.g. `python39`)
+        - environment variables, instance classes, service name, ..
+        - scaling settings
+      - three scaling types
+        - `automatic` - instances are created based on requests rate, latency, etc.
+        - `basic` - creates instances when app receives requests - then shut down when idle
+        - `manual` - specifies the number of instances running regardless of load
+      - prompts for region to deploy to, then copies application files to GCS
+      - publishes to `https://<project ID>.appspot.com`
+      - use `gcloud app browse` to open the app in a browser
+      - use `gcloud app services set-traffic <service name> --splits=<version A>=.8,<version B>=.2` to split traffic between versions
+        - can split traffic based on `ip`, `cookie` or `random` (use `--split-by` flag)
+      - cannot delete an application, but can disable it from the settings
+    - Cloud Run
+      - enable API `run.googleapis.com` (optionally `cloudbuild.googleapis.com` to build the image)
+      - build container image with `gcloud builds submit --tag gcr.io/<project ID>/<image tag>`
+      - check list of images with `gcloud container images list` or tags with `list-tags`
+      - deploy with `gcloud run deploy <name> --image=<image> --region=<region> --platform=managed --allow-unauthenticated`
+      - three platforms
+        - `managed` - fully managed Cloud Run
+        - `gke` - Cloud Run for Anthos, requires `--cluster`
+        - `kubernetes` - Knative compatible K8s cluster, requires `--kubeconfig`
+      - list services with `gcloud run services list`
+      - list revisions with `gcloud run revisions list`
+      - split traffic using `gcloud run services update-traffic <service> --to-revisions=<rev A>=90,<rev B>=10`
+      - revisions are automatically scaled based on requests
+        - possibility to set min (`--min-instances`) and max (`--max-instances`) number of instances
+    - Cloud Functions
+      - enable API `cloudfunctions.googleapis.com`
+      - deploy with `gcloud functions deploy <name> --runtime=<runtime> --trigger-http --allow-unauthenticated`
+      - list with `gcloud functions list`
+  - Deploying an application that receives Google Cloud events (e.g., Cloud Pub/Sub events, Cloud Storage object change notification events)
+    - Cloud Run
+      - create a pub/sub topic with `gcloud pubsub topics create <name>`
+      - create a dedicated service account for pub/sub `gcloud iam service-accounts create <name> --display-name <name>`
+      - grant the service account access to Cloud Run `gcloud run add-iam-policy-binding <service> --member=serviceAccount:<service account> --role=roles/run.invoker`
+      - create subscription `gcloud pubsub subscriptions create <name> --topic=<topic> --push-endpoint=<cloud run URL> --push-auth-service-account=<service account>`
+    - Cloud Functions
+      - Pub/Sub: use `--trigger-topic <topic name>` when deploying the function
+      - GCS: use `--trigger-resource <bucket> --trigger-event google.storage.object.finalize`
+
+- 3.4 Deploying and implementing data solutions. Tasks include:
+  - Initializing data systems with products (e.g., Cloud SQL, Cloud Datastore, BigQuery, Cloud Spanner, Cloud Pub/Sub, Cloud Bigtable, Cloud   Dataproc, Cloud Dataflow, Cloud Storage)
+  - Loading data (e.g., command line upload, API transfer, import/export, load data from Cloud Storage, streaming data to Cloud Pub/Sub)
+    - Cloud SQL
+      - enable API `sqladmin.googleapis.com`
+      - create new instance with `gcloud sql instances create <name> --database-version=<DB version> --cpu=X --memory=4GB --zone=<zone> --root-password=<root password>`
+        - database version can be `POSTGRES_x_y`, `SQLSERVER_20xx_YYYYY` or `MYSQL_x_y`
+        - availability can be `regional` or `zonal` (default) - set with `--availability-type=<type>`
+      - has public connectivity by default, can authorize network with `--authorized_networks=<net1>,<net2>,..`
+      - possibility to connect to internal network (VPC)
+      - supports automated backups with `--backup`
+      - replication can be set with `--replication=<syncronous|asynchronous>` and `--replication-type=<READ|WRITE>`
+      - can export data to GCS using `gcloud sql export <format> <instance> <gcs URI>`
+    - Cloud Spanner
+      - enable API `spanner.googleapis.com`
+      - create instance with `gcloud spanner instances create <name> --config=<config> --description=<blah> --nodes=<count>`
+      - list databases with `gcloud spanner databases list --instance <instance>`
+      - create one with `gcloud spanner databases create <name> --instance <instance>`
+      - run SQL with `gcloud spanner databases execute-sql <database> --instance=<instance> --sql='SELECT ..'`
+      - check schema with `gcloud spanner databases ddl describe <database> --instance=<instance>`
+      - update schema with `gcloud spanner databases ddl update <database> --instance=<instance> --ddl='ALTER ..'`
+      - add entry with `gcloud spanner rows insert --instance=<instance> --table=<table> --data=<Key>=<Value>,<Key>=<Value>`
+    - Cloud Storage
+      - list buckets with `gsutil ls`
+      - create new bucket with `gsutil mb`
+        - specify storage class with `-c <class>` (default is `Standard`)
+        - set location with `-l <location>` (can select single region, but also multi-region - `EU`, `US` & `ASIA`)
+      - copy file from/to bucket with `gsutil cp gs://<bucket> <local folder>`
+      - can setup versioning with `gsutil versioning set <on|off> gs://<bucket>`
+    - Cloud Datastore
+      - create with `gcloud datastore databases create --region=<region>`
+      - export to GCS with `gcloud datastore export gs://<bucket> --namespaces=<ns> --kinds=<kind>`
+    - Bigtable
+      - enable API `bigtable.googleapis.com` and `bigtableadmin.googleapis.com`
+      - create with `gcloud bigtable instances create <instance> --cluster=<cluster ID> --cluster-zone=<zone> --cluster-num-nodes=<count>`
+      - import from GCS using `gcloud beta dataflow jobs run <name> --gcs-location=gs://<bucket> --num-workers=<count> --parameters=bigtableProject=<project ID>,bigtableInstanceId=<instance>,bigtableTableId=<table ID>`
+    - BigQuery
+      - create a new dataset with `bq mk <ds>` or `bq mk <ds>.<table>` (`rm` to delete)
+      - extract to GCS using `bq extract <ds>.<table> gs://<bucket>` (`load` to import)
+        - can import multiple format (use `--source-format=<CSV>`)
+      - insert row with `echo '{"blah":"blah"}' | bq insert <ds>.<table>`
+      - execute query with `bq query '<query>'`
+      - show information with `bq show <ds>.<table>`
+      - interactive bq session with `bq shell`
+
+- 3.5 Deploying and implementing networking resources. Tasks include:
+  - Creating a VPC with subnets (e.g., custom-mode VPC, shared VPC)
+    - custom-mode VPC
+      - create with `gcloud compute networks create <name> --subnet-mode=custom`
+      - list VPCs with `gcloud compute networks list`
+      - add subnets with `gcloud compute networks subnets create <name> --network=<network> --region=<region> --range=<IP range>`
+      - expand IP range with `gcloud compute networks subnets expand-ip-range <subnet> --region=<region> --prefix-length=<length>`
+      - convert VPC in auto mode to custom with `gcloud compute networks update <name> --switch-to-custom-subnet-mode`
+    - shared VPC
+      - requires an organization to exist
+      - works with a host project and one or more service projects attached to it
+      - eligible service project resources
+        - GCE instances, GCE instance templates, GCE instance groups
+        - GKE clusters
+        - Cloud Run, Cloud Functions, GAE services
+        - internal DNS, Cloud DNS private zones, internal IPs
+        - load balancing 
+      - enable host project with `gcloud compute shared-vpc enable <host project ID>`
+      - attach service projects with `gcloud compute shared-vpc associated-projects add <service project ID> --host-project <host project ID>`
+      - list service projects with `gcloud compute shared-vpc list-associated-resources <host project ID>`
+      - list subnets with `gcloud compute networks subnets list-usable --project=<host project ID>`
+      - attach GCE instance with `gcloud compute instances create <name> --project=<service project ID> --subnet=projects/<host project ID>/regions/<region>/subnetworks/<subnet>`
+  - Launching a Compute Engine instance with custom network configuration (e.g., internal-only IP address, Google private access, static external  and - private IP address, network tags)
+    - internal-only IP address
+      - by default VMs get both an internal & external IP address
+      - can override with `gcloud compute instances create <name> --network-interface=no-address`
+      - or `gcloud compute instances create <name> --no-address`
+    - external static IP
+      - reserve one with `gcloud compute addresses create <name>`
+        - can select IP version with `--ip-version <IPV4|IPV6>` flag
+        - regional by default, can be set global with `--global` flag
+      - assign to VM with `gcloud compute instances create <name> --address=<static IP>`
+      - or `gcloud compute instances add-access-config <name> --access-config-name=<access cfg name> --address=<static IP>`
+    - internal static IP
+      - same, but subnet needs to be specified - `gcloud compute addresses create <name> --region=<region> --subnet=<subnet>`
+      - can also select the IP address using `--addresses=<IP address>` flag
+      - assign to VM with the `--private-ip-address=<IP address>` flag
+    - network tags
+      - max 64 per VM
+      - add tags at creation with `gcloud compute instances create <name> --tags=<tag>,..`
+      - or add to an existing instance `gcloud compute instances add-tags <name> --tags=<tag>,..`
+    - Google private access
+      - allows VM with internal IP to access Google public APIs & services
+      - Google private access needs to be enabled on subnet
+        - enable with `gcloud compute networks subnets update <subnet> --region=<region> --enable-private-ip-google-access`
+      - requires proper DNS & routing config in the VPC
+  - Creating ingress and egress firewall rules for a VPC (e.g., IP subnets, tags, service accounts)
+    - list with `gcloud compute firewall-rules list`
+    - create a new rule with `gcloud compute firewall-rules create <name> --network=<network> --allow=<protocol>:<port>-<port>`
+      - sources can be IP ranges (`--source-ranges`), service accounts (`--source-service-accounts`) or tags (`--source-tags`)
+      - destinations can be IP ranges (`--destination-ranges`)
+      - rules can be applied to resources based on service accounts (`--target-service-accounts`) or tags (`--target-tags`)
+      - direction (`--direction`) can be `INGRESS` (default) or `EGRESS`
+    - e.g. rule to allow SSH towards instances with a specific tag `gcloud compute firewall-rules create inbound-ssh --network=default`
+    - update existing rules with `gcloud compute firewall-rules update <name>` (same flags as create)
+      - e.g. `gcloud compute firewall-rules update default-allow-rdp --disabled`
+  - Creating a VPN between a Google VPC and an external network using Cloud VPN
+    - require a VPN gateway `gcloud compute vpn-gateways create <name> --region=<region> --network=<network>`
+    - remote VPN peer `gcloud compute external-vpn-gateways create <name> --interfaces=<id>=<IP address>`
+    - setup VPN tunnel between peers `gcloud compute vpn-tunnels create <name> --shared-secret=<secret> --peer-external-gateway=<remote VPN peer> --vpn-gateway=<VPN gateway>`
+      - can configure traffic selector with `--local-traffic-selector=<CIDR>` and `--remote-traffic-selector=<CIDR>`
+      - HA mode requires a Cloud Router (that runs BGP) set with `--router=<router>`
+      - HA also requires the interface to be specified with `--interface=<ID>`
+    - Cloud Router can be created with `gcloud compute routers create <name> --network=<network>`
+      - 2 advertisement modes: `CUSTOM` or `DEFAULT`; set with `--advertisement-mode=<mode>`
+      - can configure custom ASN with `--asn=<asn>`
+  - Creating a load balancer to distribute application network traffic to an application (e.g., Global HTTP(S) load balancer, Global SSL Proxy load balancer, Global TCP Proxy load balancer, regional network load balancer, regional internal load balancer)
+    - load balancer involves many different resources:
+      - named ports - used to direct traffic to instances
+      - health check
+        - create with `gcloud compute health-checks create <type> <name> --port=<port>`
+        - type can be `grpc`, `http`, `https`, `http2`, `ssl` or `tcp`
+        - can specify interval, threshold, host, path, timeout, ..
+        - can be global with `--global`
+      - backend services
+        - create with `gcloud compute backend-services create <name> --health-checks=<hc> --load-balancing-schema=<scheme>`
+          - scheme defines the type of load balancer: `INTERNAL` (internal TCP/UDP), `EXTERNAL`, `INTERNAL_SELF_MANAGED` (traffic director),  `INTERNAL_MANAGED` (internal HTTPS)
+          - can specify network (`--network`) when doing internal load balancing
+          - can be global with `--global`, otherwise set region with `--region=<region>`
+        - add instances to the backend service with `gcloud compute backend-services add-backend <name>`
+          - can point to instance groups (`--instance-group`) or network endpoint groups (`--network-endpoint-group`)
+          - create NEG with `gcloud compute network-endpoint-groups create <name> --network-endpoint-type=<type>`
+          - add instances with `gcloud compute network-endpoint-groups update <name> --add-endpoint=instance=<name>,port=<port>`
+          - multiple balancing modes: `UTILIZATION`, `RATE` or `CONNECTION`
+      - URL map - routes reqs based on host or path
+        - create with `gcloud compute url-maps create <name> --default-service=<backend service>`
+      - SSL certificate (when TLS is in use)
+      - target proxy - `gcloud compute target-<proto>-proxy create <name> --url-map=<URL map>`
+        - target pool is also possible - `gcloud compute target-pools create <name> --health-checks=<hc>`
+          - add instances to it with `gcloud compute target-pools add-instances <name> --instances=<instance>,..`
+      - (global) forwarding rules `gcloud compute forwarding-rules create <name> --target-<proto>-proxy=<target proxy> --load-balancing-schema=<scheme>`
+        - assigns an ephemeral public IP by default (for external LB) but a static one can be set with `--address=<IP address>`
+
+- 3.6 Deploying a solution using Cloud Marketplace. Tasks include:
+  - Browsing Cloud Marketplace catalog and viewing solution details
+  - Deploying a Cloud Marketplace solution
+
+- 3.7 Deploying application infrastructure using Cloud Deployment Manager. Tasks include:
+  - Developing Deployment Manager templates
+    - templates can be written using Jinja or Python syntax
+    - they support properties (= inputs)
+      - e.g. `{{ properties["zone"] }}` in the template; set them in CLI with `--properties zone:us-central1-a`
+      - predefined environment vars, name of the deployment (`deployment`), project ID (`project`), username, .. use them with `{{ env["project"] }}`
+    - resources have 3 fields: `name`, `type` (e.g. `compute.v1.instance`) and `properties`
+  - Launching a Deployment Manager template
+    - create a new deployment using `gcloud deployment-manager deployments create <name> --config=<template file>`
+      - deployments can also be created from templates (Jinja or Python) directly
+    - get details with `gcloud deployment-manager deployments describe <name>`
+    - list resources from a deployment using `gcloud deployment-manager resources list --deployment=<name>`
+    - list manifests from deployment using `gcloud deployment-manager manifests list --deployment=<name>`
+    - get manifest using `gcloud deployment-manager manifests describe <manifest> --deployment=<deployment>`
+
+## 4. Ensuring successful operation of a cloud solution
+- 4.1 Managing Compute Engine resources. Tasks include:
+  - Managing a single VM instance (e.g., start, stop, edit configuration, or delete an instance)
+    - `gcloud compute instances <start|stop|update|delete> <name>`
+  - SSH/RDP to the instance `gcloud compute ssh <name>`
+  - Attaching a GPU to a new instance and installing CUDA libraries
+    - check GPU quota with `gcloud compute regions describe <region>`
+    - requires paid account
+    - N1 and A2 instances support GPUs
+    - install CUDA toolkit (requires kernel headers package) - using package manager
+  - Viewing current running VM inventory (instance IDs, details)
+    - `gcloud compute instances list`
+    - `gcloud compute instances describe <name>`
+  - Working with snapshots (e.g., create a snapshot from a VM, view snapshots, delete a snapshot)
+    - create a new snapshot with `gcloud compute disks snapshot <VM> --snapshot-names=<name> --storage-location=<zone>`
+      - if snapshot name isn't set, a random name is chosen automatically
+      - if storage location (zone or region) isn't specified, a nearby location is chosen
+    - list snapshots with `gcloud compute snapshots list` or delete with `delete <name>`
+    - create disk from snapshot with `gcloud compute disks create <name> --source-snapshot=<snapshot>`
+    - create instance from restored disk with `gcloud compute instances create <name> --disk name=<disk>,boot=yes`
+  - Working with images (e.g., create an image from a VM or a snapshot, view images, delete an image)
+    - list images with `gcloud compute images list`
+    - create new image from VM with `gcloud compute images create <name> --source-disk=<disk>`
+    - create new image from snapshot `gcloud compute images create <name> --source-snapshot=<snapshot>`
+    - delete images with `gcloud compute images delete <name>`
+  - Working with instance groups (e.g., set autoscaling parameters, assign instance template, create an instance template, remove instance group)
+    - managed instance groups include autoscaling, autohealing, regional deployments, ..
+      - MIGs can be stateful (persists instance name & disk) or stateless
+      - create with `gcloud compute instance-groups managed create <name> --size=<size> --template=<template> --zone=<zone>`
+      - resize MIG with `gcloud compute instance-groups managed resize <name> --size=<size>`
+      - instances can be taken out a MIG (= abandon) if needed (command for this is `abandon-instances`)
+    - MIG autoscaling
+      - autoscaling can be based on CPU utilization, cloud monitoring metrics, HTTPS load balancer capacity or schedules
+      - configure with `gcloud compute instance-groups managed set-autoscaling <name> --max-num-replicas=<x> --target-cpu-utilization=<0.xx> --cool-down-period=<secs>`
+      - possibility to use predictive autoscaling, which uses historical data to scale ahead of load
+      - 3 autoscaling modes: `on`, `off` or `only-scale-out`
+    - instance templates
+      - can be created from scratch, from existing VM or from another instance template
+      - create with `gcloud compute instance-templates create <name> --<options>`
+      - from existing instance: `gcloud compute instance-templates create <name> --source-instance=<vm> --source-instance-zone=<zone>`
+      - create VM from an instance template: `gcloud compute instances create <name> --source-instance-template=<template>`
+        - can override options (e.g. machine type, disk, ..)
+  - Working with management interfaces (e.g., Cloud Console, Cloud Shell, GCloud SDK)
+
+- 4.2 Managing Google Kubernetes Engine resources. Tasks include:
+  - Viewing current running cluster inventory (nodes, pods, services)
+  - Browsing the container image repository and viewing container image details
+    - view images with `gcloud container images list --repository=<repository>`
+    - list image versions (tags) with `gcloud container images list-tags <repository>/<image>`
+    - tag image with `gcloud container images add-tag <old tag> <new tag>` (remove tag with `untag`)
+  - Working with node pools (e.g., add, edit, or remove a node pool)
+    - create new node pool with `gcloud container node-pools create <name> --cluster=<cluster>`
+    - list pools of a cluster with `gcloud container node-pools list --cluster=<cluster>`
+    - node pools can be resized with `gcloud container node-pools resize <cluster> --node-pool=<pool> --num-nodes=<num>`
+    - K8s resources can be assigned to a specific node pool using `nodeSelector` (using `cloud.google.com/gke-nodepool` key)
+  - Working with pods (e.g., add, edit, or remove pods)
+  - Working with services (e.g., add, edit, or remove a service)
+  - Working with stateful applications (e.g. persistent volumes, stateful sets)
+  - Working with management interfaces (e.g., Cloud Console, Cloud Shell, Cloud SDK)
+
+- 4.3 Managing App Engine and Cloud Run resources. Tasks include:
+  - Adjusting application traffic splitting parameters
+    - cf. chapter `3.3`
+  - Setting scaling parameters for autoscaling instances
+    - cf. chapter `3.3`
+  - Working with management interfaces (e.g., Cloud Console, Cloud Shell, Cloud SDK)
+
+- 4.4 Managing storage and database solutions. Tasks include:
+  - Moving objects between Cloud Storage buckets
+    - create bucket with `gsutil mb gs://<bucket>`
+    - transfer file into bucket with `gsutil mv <file> gs://<bucket>`
+    - list buckets with `gsutil ls` (or `gsutil ls gs://<bucket>` for bucket content)
+    - move between buckets with `gsutil mv gs://<source> gs://<destination>`
+  - Converting Cloud Storage buckets between storage classes
+    - get bucket default storage class with `gsutil defstorageclass get gs://<bucket>`
+    - change default storage class with `gsutil defstorageclass set <storage class> gs://<bucket>`
+      - can be `STANDARD` (default), `NEARLINE`, `COLDLINE` or `ARCHIVE`
+    - get object storage class with `gsutil stat gs://<bucket>/<object>`
+    - change it either using object lifecycle management or by rewriting the object (`gsutil rewrite -s <storage class> gs://<bucket>/<object>)
+  - Setting object life cycle management policies for Cloud Storage buckets
+    - multiple actions possible: `Delete`, `SetStorageClass`
+    - actions based on conditions: age, creation time, # of versions, ..
+    - enable OLM on a bucket with `gsutil lifecycle set <config> gs://<bucket>`
+      - config file in JSON
+    - check with `gsutil lifecycle get gs://<bucket>`
+    - disable OLM by submitting a configuration file with empty lifecycle config (no rule)
+  - Executing queries to retrieve data from data instances (e.g., Cloud SQL, BigQuery, Cloud Spanner, Cloud Datastore, Cloud Bigtable)
+  - Estimating costs of a BigQuery query
+    - "When you enter a query in the Cloud Console, the query validator verifies the query syntax and provides an estimate of the number of bytes read. You can use this estimate to calculate query cost in the Pricing Calculator."
+    - estimate can also be retrieved using the `bq` command (with `--dry-run` flag)
+    - then go to the Pricing Calculator, select BigQuery (on-demand) and enter the estimate received from the query before.
+  - Backing up and restoring data instances (e.g., Cloud SQL, Cloud Datastore)
+    - Cloud SQL
+      - on-demand backup with `gcloud sql backups create --async --instance=<name>`
+      - can be scheduled by updating instance config `gcloud sql instances path <name> --backup-start-time=<hh:mm>`
+        - `--no-backup` to disable automated backups
+      - list backups with `gcloud sql backups list --instance=<name>`
+      - restore with `gcloud sql backups restore <backup ID> --restore-instance=<instance>`
+        - remove any existing replica first (`gcloud sql instances delete <replica name>`)
+    - Cloud Datastore
+      - export to GCS with `gcloud datastore export gs://<bucket> --async`
+      - import with `gcloud datastore import gs://<bucket>/<object>.overall_export_metadata --async`
+  - Reviewing job status in Cloud Dataproc, Cloud Dataflow, or BigQuery
+    - BigQuery: using `bq ls --jobs=true --all=true <project ID>`
+    - Dataflow: `gcloud dataflow jobs list` & `gcloud dataflow jobs describe <job>`
+  - Working with management interfaces (e.g., Cloud Console, Cloud Shell, Cloud SDK)
+
+- 4.5 Managing networking resources. Tasks include:
+  - Adding a subnet to an existing VPC
+    - using `gcloud compute networks subnets create <name> --network=<net> --range=<range> --region=<region>`
+  - Expanding a subnet to have more IP addresses
+    - can only expand by updating the subnet mask (max. /16)
+    - this cannot be undone (= cannot shrink a subnet)
+    - run `gcloud compute networks subnets expand-ip-range <subnet> --region=<region> --prefix-length=<pl>`
+    - can take a few minutes to complete - but doesn't interrupt traffic on subnet
+  - Reserving static external or internal IP addresses
+    - internal: `gcloud compute addresses create <name> --region=<region> --subnet=<subnet> --addresses=<address>`
+    - external: `gcloud compute addresses create <name> --global --ip-version IPV4|IPV6` for global
+      - `--region=<region>` instead of `--global` for regional public IP
+    - ephemeral IP addresses can also be promoted to static
+  - Working with management interfaces (e.g., Cloud Console, Cloud Shell, Cloud SDK)
+
+- 4.6 Monitoring and logging. Tasks include:
+  - Creating Stackdriver alerts based on resource metrics
+    - not available through gcloud, only UI (or API)
+    - alerting can be done based on metrics, uptime check or process health
+    - each type of resource has predefined metrics (e.g. CPU usage, sent bytes, ..)
+    - can optionally trigger alert through notification channel (slack, webhook, email, pub/sub, ..)
+    - alerts can be documented so operators know what to do (supports variables such as ${project}, etc)
+  - Creating Stackdriver custom metrics
+    - via API or SDKs only
+    - consists of metric descriptor, which defines how data is organized
+    - metric naming starts with `custom.googleapis.com/`
+      - full name would be `projects/<project ID>/metricDescriptors/custom.googleapis.com/<metric name>`
+    - write metrics data using library (`timeSeries.create`)
+  - Configuring log sinks to export logs to external systems (e.g., on-premises or BigQuery)
+    - supported destinations include GCS, Pub/Sub, BigQuery or another logging bucket
+    - requires `logging.admin` or `logging.configWriter` role
+    - create using `gcloud logging sinks create <name> <destination> --log-filter=<filter> --description=<descr>`
+      - example destination `bigquery.googleapis.com/projects/<project ID>/datasets/<dataset>`
+    - max 200 sinks per project
+    - get logging service account using `gcloud logging sinks describe <name>` & update IAM policy so the SA can write to destination
+    - in UI, go to `Log Router` to create sinks
+    - inclusion & exclusion filters to decide what to include or not
+  - Viewing and filtering logs in Stackdriver
+    - UI: `Logging`
+    - query builder uses logging query language -- e.g. `resource.type = ("gae_app" OR "gce_instance")`
+  - Viewing specific log message details in Stackdriver
+  - Using cloud diagnostics to research an application issue (e.g., viewing Cloud Trace data, using Cloud Debug to view an application point-in-time)
+  - Viewing Google Cloud Platform status
+    - available on https://status.cloud.google.com/
+  - Working with management interfaces (e.g., Cloud Console, Cloud Shell, Cloud SDK)
+
+## 5. Configuring access and security
+- 5.1 Managing identity and access management (IAM). Tasks include:
+  - Viewing IAM role assignments
+    - 3 types of roles
+      - basic: includes `roles/owner`, `roles/editor` and `roles/viewer`
+      - predefined
+        - GAE (`appengine.`): `appAdmin`, `appCreator`, `appViewer`, `codeViewer`, `deployer`, `serviceAdmin`
+        - BigQuery (`bigquery.`): `admin`, `connectionAdmin`, `connectionUser`, `dataEditor`, `dataOwner`, `dataViewer`, `filteredDataViewer`, `jobUser`, `metadataViewer`, `readSessionUser`, `resourceAdmin`, `resourceEditor`, `resourceViewer`, `user`
+        - Billing (`billing.`): `admin`, `costsManager` (view & export costs), `creator`, `projectManager`, `user`, `viewer`
+        - GCE (`compute.`): `admin`, `imageUser`, `instanceAdmin`, `instanceAdmin.v1`, `loadBalancerAdmin`, `networkAdmin`, `networkUser`, `networkViewer`, `orgFirewallPolicyAdmin/User`, `orgSecurityPolicyAdmin/User`, `osAdminLogin`, `osLogin`, `packetMirroring..`, `publicIpAdmin`, `securityAdmin`, `storageAdmin`, `viewer`, ..
+        - IAM (`iam.`): `securityAdmin`, `securityReviewer`
+        - GKE (`container.`): `admin`, `clusterAdmin`, `clusterViewer`, `developer`, `viewer`
+        - Service accounts (`iam.`): `serviceAccountAdmin`, `serviceAccountCreator/Deleter/User`
+        - GCS (`storage.`): `objectCreator/Viewer/Admin`, `admin`
+          - legacy roles (eq. to ACLs - apply to buckets): `legacyObjectReader/Owner`, `legacyBucketReader/Writer/Owner`
+      - custom
+    - view grantable roles for a given project: `gcloud iam list-grantable-roles <resource>`
+    - check IAM bindings with `get-iam-policy` command (e.g. `gcloud projects get-iam-binding <project>`)
+    - check the permissions right pane in the web UI
+  - Assigning IAM roles to accounts or Google Groups
+    - assign role with `gcloud projects add-iam-policy-binding <project> --member=<member> --role=<role>`
+      - member can be an user (`user:<email>`), a service account (`serviceAccount:<email>`), a group (`group:<email>`) or a domain (`domain:<domain>`)
+  - Defining custom IAM roles
+    - view details of a given role with `gcloud iam roles describe <role>` -- lists all included permissions
+    - custom roles can be created at project or organization level
+    - create custom role with `gcloud iam roles create <name> --organization=<org> --file=<role.yaml>`
+    - YAML content:
+      ```
+      title: role-title
+      description: role-description
+      stage: launch-stage
+      includedPermissions:
+      - permission-1
+      - permission-2
+      ```
+    - can also update existing custom roles using the `read-modify-write` pattern
+    - disable a role by setting the stage to `DISABLED`
+    - deleted roles can be undeleted within 7 days (using `undelete` command)
+- 5.2 Managing service accounts. Tasks include:
+  - Managing service accounts with limited privileges
+    - requires `iam.serviceAccountAdmin` role
+    - create new SA with `gcloud iam service-accounts create <id> --description=<descr> --display-name=<name>`
+    - SAs can be undeleted during 30 days
+  - Assigning a service account to VM instances
+    - use `gcloud compute instances set-service-account <instance> --service-account=<sa>`
+      - use `--no-service-account` to remove SA
+      - set scope with `--scopes=<s1,s2,..>` or `--no-scopes`
+    - same flags at creation time (`gcloud compute instances create ..`)
+  - Granting access to a service account in another project
+    - cf. 5.1.
+- 5.3 Viewing audit logs for project and managed services.
+  - activity tab in the homepage
+    - possibility to filter by username, categories (billing, config, development, monitoring & data access) and resource types
+    - includes timestamps, actions (e.g. "fred created test-vm") and details about the action (mostly resource properties)
+  - using Logs Explorer (Logging)
+    - set Log Name to `activity` (other options include `data_access`, `system_event` and `policy`)
+  - required roles for this are `roles/logging.viewer` (or `roles/logging.privateLogViewer` - includes data access logs too)
+  - admin activity & system event logs are not charged (data access & policy are)
+
+# billing account
+- not part of projects, but part of organization
+- a project can only be linked to a single billing account
+  - but a billing account can be linked to multiple projects
+- IAM roles for billing account:
+  - `creator`: create new billing accounts
+  - `administrator`: manage billing accounts (but cannot create them)
+  - `user`: link projects to billing accounts (BA side)
+  - `viewer`: view cost information & transactions
+  - `project billing manager`: link projects to billing accounts (project side)
+- monthly invoiced billing
+  - contact cloud billing support to determine eligibility
+  - depends on account age, country and monthly spend
+
+# networking
+- premium vs standard routing tier
+- load balancing
+  - cross-region load balancing (using anycast IP)
+  - cloud load balancer (internal & external)
+  - HTTP load balancer
+- VPC: Virtual Private Cloud (global)
+  - auto mode creates subnets in regions
+  - custom mode doesn't - up to the user to declare subnets
+- subnets (regional)
+- routes (global)
+  - can be applied base on instance tags
+- firewall rules (global)
+  - apply by instance tag or service account
+  - blocks incoming and accept outgoing traffic by default
+  - rules are evaluated by order of priority
+- reserved IP addresses (4)
+  - network + broadcast
+  - first IP for gateway
+  - last IP for future use
+
+# GKE
+
+# GAE (App Engine)
+- GAE Standard (non-container)
+- GAE Flexible (container)
+
+# misc
+- http://gcp.solutions
+- GCP Best Practices for Enterprise Orgs
+- Best Practices for Operating Containers
+- review IAM Roles
+- spend time on GCP Pricing Calculator (https://cloud.google.com/products/calculator)
+- Cloud Audit Logging structure
+- Google Cloud Minute on Youtube
+- CodeLabs (https://codelabs.developers.google.com/)
+
+# services
+## compute
+- Compute Engine (GCE)
+  - zonal
+  - equivalent to AWS EC2
+  - pay by the second (min. 60s)
+  - automatically cheaper if it keeps running (sustained use discount)
+  - even cheaper for preemptible instances or long-term commitment
+- Kubernetes Engine (GKE)
+  - regional
+  - equivalent to ECS/EKS
+  - no IAM integration (to check?)
+  - integrates with persistent storage
+  - pay for underlying instances - no fee for management
+- App Engine (GAE)
+  - regional
+  - auto-scale based on load
+- Cloud Functions
+  - regional
+  - equivalent to Lambda
+  - runs code in response to an event
+  - support Node.js, Go, Python & Java
+  - pay by 100ms
+  - each function gets an HTTP endpoint
+## storage
+- Local SSD
+  - zonal
+  - fast SSD attached to servers
+  - eq. to AWS Instance Store Volumes
+  - data is lost when instance shuts down
+  - data is encrypted
+  - pay for GB allocated
+- Persistent Disk
+  - zonal
+  - boot disk for GCE instances (block device)
+  - performance scales with volume size
+  - equivalent to EBS
+  - support snapshots (pay for increment)
+  - pay for GB/month provisioned (based on performance class)
+- Cloud Filestore
+  - zonal
+  - file based storage (NFS like)
+  - eq. to EFS
+  - can be accessed from GCE/GKE using NFSv3
+  - pay for TB provisioned (Standard or Premium)
+- Cloud Storage (GCS)
+  - regional or multi-regional
+  - object storage
+  - eq. to S3
+  - can be versioned
+  - 11 9's durability
+  - strongly consistent
+  - classes: standard, nearline, coldline, archive
+  - can be managed using `gsutil`
+  - pay for data operations & GB/month stored by class
+## databases
+- Cloud SQL
+  - regional
+  - MySQL or PostgreSQL
+  - eq. to AWS RDS
+  - automatic replication, backup, failover
+  - scaling is manual
+  - pay for underlying resources + service fees
+- Cloud Spanner
+  - regional, multi-regional or global
+  - up to thousands of nodes (min. 3 for production)
+  - chooses Consistency & Partition-Torelance (from CAP theorem)
+  - 5 9's SLA
+  - pay for provisioned node time & used storage time
+- Big Query
+  - multi-regional
+  - serverless data warehouse for analytics using SQL
+  - eq. to AWS RedShift & Athena
+  - pay for GB scanned during queries
+  - cached results are free (~24h)
+  - pay for data stored (GB/month)
+  - pay for GB added via streaming inserts (?)
+- Cloud BigTable
+  - zonal
+  - NoSQL database for analytics apps
+  - eq. to DynamoDB (or HBase)
+  - integrates with Hadoop, ..
+  - pay for processing node hours
+  - pay for GB/hours used for storage (HDD or SSD)
+- Cloud Datastore
+  - regional or multi-regional
+  - NoSQL database
+  - eq. to DynamoDB (or MongoDB)
+  - automatic built-in indexes
+  - pay for GB/month of storage (incl. index)
+  - pay for IO operations
+- Firebase Realtime DB & Cloud Firestore
+  - zonal (Firebase) and multi-regional (Firestore)
+  - real-time client updates with WebSocket
+  - Firebase DB = huge JSON document
+  - Firestore has collections & docs
+  - Spark (free tier), Flame (flat tier) or Blaze (usage based)
+  - pay for GB/month (Firebase) or for operations (Firestore)
+## data transfer
+- Data Transfer Appliance
+  - eq. to Snowball
+  - ingest only (no data export)
+  - 100TB or 480TB
+- Storage Transfer Service
+  - global
+  - copies objects
+  - destination is a GCS bucket
+  - source can be S3, HTTP endpoints, ..
+  - one-time or recurring transfers
+## external networking
+- Google Domains
+  - global
+  - DNS registrar
+  - eq. to Route53
+  - supports DNSSEC
+  - built-in DNS or custom NS
+- Cloud DNS
+  - global
+  - managed authoritative DNS service
+  - 100% uptime
+  - public & private zones
+  - supports DNSSEC
+  - pay fixed fee per managed zone
+  - pay for lookups
+- Static IP
+  - eq. to Elastic IP
+  - regional IPs for GCE instances & network LB
+  - global IPs for global LB (HTTPS, SSL, TCP, DNS)
+  - free, but pay for unused static IPs
+- Cloud Load Balancing (CLB)
+  - regional or global
+  - integrated with auto-scaling and DCN
+  - eq. to ELB
+  - regional network LB
+      - health checks, round robin, session affinity
+      - rules based on IPs, protocol & port
+  - global LB w/ multi-region failover
+    - HTTPS, SSL proxy or TCP proxy
+    - uses anycast
+  - pay for ingress traffic + hourly rule
+- Cloud CDN
+  - global
+  - eq. to CloudFront
+  - no custom origins (only GCP)
+  - supports HTTP/2 and HTTPS
+  - supports caching
+  - pay for CDN -> client, based on location
+  - pay for HTTP request volume
+  - pay for cache invalidation reqs
+## internal networking
+- Virtual Private Cloud (VPC)
+  - global (but subnets are regional)
+  - eq. to VPC
+  - automatic vs custom mode
+  - can be shared across multiple projects
+  - supports private access to GCP services
+  - pay for network egress traffic
+- Cloud VPN
+  - regional
+  - eq. to AWS VPN
+  - requires static IP
+  - connects into a subnet of the VPC
+  - supports both static and dynamic routing
+  - 99.9% SLA
+  - pay for tunnel hour
+- Dedicated Interconnect
+  - regional or multi-regional
+  - direct connect to DC
+  - option to go through a partner
+  - no encryption
+  - 99.99% for redundant connections, 99.9% otherwise
+  - pay for 10G link + fee per VLAN attachment
+  - reduced egress rate
+- Cloud Router
+  - regional
+  - dynamic routing (BGP) connecting to external networks
+  - works with CloudVPN and Dedicated Interconnect
+- CDN Interconnect
+  - regional or multi-regional
+  - direct & low-latency access to external CDNs (Akamai, Fastly, ..)
+## ML & AI
+- Cloud ML Engine
+  - regional
+  - training ML models & making predictions
+  - eq. to SageMaker
+  - based on TensorFlow
+  - real-time or batch
+  - integrates with GCS, BQ, Datalab, Dataflow
+  - pay per hour (training)
+  - pay per provisioned node (predict)
+- Cloud Vision API
+  - global
+  - classifies images, detects objects, reads printed text, ..
+  - eq. to Rekognition
+  - pre-trained ML model
+  - pay per image
+  - higher price for OCR, finding similar images on web, ..
+- Cloud Speech API
+  - global
+  - automatic speech regognition (ASR)
+  - supports 110+ languages
+  - accepts real-time audio & pre-recorded
+  - pay per 15s audio processed
+- Cloud Natural Language API
+  - global
+  - analyses texts for sentiment, intent, ..
+  - content classification supports 700+ categories
+  - pay per 1000 chars analyzed
+- Cloud Transation API
+  - global
+  - translate text among 100+ languages
+  - pay per character processed
+- Dialogflow
+  - global
+  - builds conversational interfaces (chatbots)
+  - eq. to Lex
+  - free & paid plan
+- Cloud Video Intelligence API
+  - regional or global
+  - annotates videos in GCS with info about what they contain
+  - pay per minute of video processed
+- Cloud Job Discovery
+  - global
+  - helps career sites to improve engagement & conversion
+## big data and IoT
+- Cloud IoT Core
+  - global
+  - connect, manage & ingest data from devices
+  - eq. to AWS IoT
+  - includes Device Manager, Protocol Bridge
+  - connects using MQTT or HTTPS
+  - pay per MB of data exchanged
+- Cloud Pub/Sub
+  - global
+  - messaging/queuing system
+  - eq. to SNS, SQS
+  - messages can be up to 10MB - max 7 days
+  - push mode delivers to HTTPS endpoints
+  - pull mode delivers to requesting clients
+  - pay for data volume
+- Cloud Dataprep
+  - global
+  - visually explore, clean & prepare data
+  - eq. to Glue
+  - managed by Trifacta
+  - ingests from BQ, GCS or file upload (JSON, CSV, ..)
+  - detects schemas, data types, anomalies, ..
+  - pay for underlying dataflow job + mgmt overhead
+- Cloud Dataproc
+  - global
+  - MapReduce processing via managed Spark & Hadoop clusters
+  - eq. to EMR
+  - integrates with BQ, GCS, Bigtable, ..
+  - pay for underlying GCE instances
+  - pay for management fee (per vCPU/hour in the cluster)
+  - good for migrating existing Spark/Hadoop into GCP
+- Cloud Dataflow
+  - zonal
+  - managed batch or stream MapReduce-like processing
+  - eq. to EMR
+  - integrates with PubSub, BQ, Datastore, Bigtable, ..
+  - pay for underlying GCE instances
+- Cloud Datalab
+  - regional
+  - interactive tool for data exploration, analysis & visualization
+  - uses Jupyter Notebook
+  - pay for instances (GCE/GAE) storing the notebook
+- Cloud Data Studio
+  - global
+  - Big Data visualization tool for dashboards & reporting
+  - eq. QuickSight (or Tableau)
+  - many possible data sources & visualizations
+- Cloud Genomics
+  - global
+  - store & process genomes & related experiments
+  - uses open industry standards
+## Identity & Access
+- Roles
+  - global
+  - collections of permissions to use & managed GCP resources
+  - eq. to IAM Policies
+  - primitive roles: owner, editor & viewer (pre-date IAM)
+  - predefined roles: granular access
+    - ex. roles/bigquery.dataEditor
+  - custom roles
+- Cloud IAM
+  - controls access to GCP resources (authZ)
+  - eq. to AWS IAM
+  - member can be a user, group, domain or service account
+  - every identity has a unique email address
+  - policies bind members to roles at a hierarchy level (org, folder, project, ..)
+- Service Accounts
+  - Google account that represents an application
+  - can be assumed by apps or individual users
+  - can generate and download private keys..
+  - .. or use managed keys (managed by Google, rotated daily)
+- Cloud Identity
+  - identity as a service
+  - eq. to IAM
+  - free Google account for non G Suite users, centrally managed
+  - supports 2FA, including security keys
+  - can sync from AD and LDAP via Cloud Directory Sync
+  - identities can be used to SSO with other apps
+- Cloud Resource Manager
+  - centrally manage & secure org projects
+  - eq. to Organizations
+  - tied to a Cloud Identity or G Suite domain
+  - allows to define custom IAM roles at org level
+  - allows to apply custom policies at org, folder or project
+- Cloud Identity Aware Proxy (IAP)
+  - eq. to API Gateway (?)
+  - based on CLB & IAM
+  - pay for load balancing & traffic
+- Cloud Audit Logging
+  - maintains audit logs for each project & org
+  - eq. to CloudTrail
+  - Admin Activity & System Events (400d retention)
+  - Access Transparency (actions done by Google staff)
+  - Data Access (30d retention) - for GCP-visible services
+## security & management
+- Cloud Armor
+  - protection from DDoS & other attacks on global LB
+  - eq. to Shield + WAF
+  - detail logs in StackDriver Logging
+  - manage IPs with whitelist/blacklist
+  - supports intelligent rules (XSS, SQLi, ..)
+  - preview mode (not enforcing)
+  - pay per policy & rule configured + incoming volume
+- Security Scanner
+  - limited GAE based vulnerability scanner
+  - eq. to Inspector
+- Cloud DLP API
+  - finds & redacts sensitive info in data streams
+  - eq. to Macie
+  - can read directly or from GCS, BQ or Datastore
+  - pay per GB processed
+- Event Thread Detection (ETD)
+  - scans Stackdriver logs for suspicious activity
+  - eq. to GuardDuty
+  - can export parsed logs to BQ
+  - integrates with SIEM (Google SCC, Cloud Pub/Sub)
+- Cloud Security Command Center (SCC)
+  - SIEM
+  - eq. to Security Hub
+  - integrates with other security services
+  - can alert or export data
+## encryption keys
+- Cloud Key Management Service (KMS)
+  - manage & use cryptographic keys
+  - supports symmetric & asymmetric keys
+  - eq. to KMS (or Vault)
+  - integrates with IAM and Audit Logging
+  - rotate key automatically or on demand
+  - key deletion has 24h delay
+  - pay for active key
+  - pay for key use operations
+- Cloud HSM
+  - FIPS 140-2 L3 certified
+  - device hosts keys and performs operations
+  - eq. to CloudHSM
+  - integrates with Cloud KMS
+  - same pricing model than KMS (but more expensive)
+  - some key types are more expensive
+## ops and management
+- Stackdriver
+  - monitoring and logging on GCP (& AWS/hybrid)
+  - eq. to CloudWatch
+  - one Stackdriver account can track multiple projects
+  - pay based on usage
+- Stackdriver Monitoring
+  - visibility of perf, uptime & overall health
+  - based on collectd
+  - eq. to CloudWatch Metrics
+  - includes dashboards, metrics, alerting
+  - pay for API calls & MB
+- Stackdriver Logging
+  - all about log data & events :)
+  - based on Fluentd
+  - eq. to CloudWatch Logs
+  - can send log in real-time to BQ
+  - can export to GCS for archiving
+  - pay per GB ingested & stored for a month
+- Stackdriver Trace
+  - tracing for distributed systems
+  - eq. to X-Ray
+  - trace API and SDKs
+  - automatically capture traces from GAE
+  - pay for ingesting & retrieving trace spans
+- Stackdriver Error Reporting
+- Stackdriver Debugger
+- Stackdriver Profiler
+- Deployment Manager
+  - eq. to CloudFormation
+  - IaC; declarative templates
+  - templates written in YAML, Python or Jinja2
+  - input/output validation using JSON schema
+  - supports preview
+- Cloud Billing API
+  - programmatically manage billing or get GCP pricing
+  - eq. to AWS Billing API
+  - manage billing (list, describe, associate projects, ..)
+  - pricing (list SKUs, get public pricing)
+  - export to BQ or GCS possible
+## development & APIs
+- Cloud Source Repositories
+  - hosted private Git repos
+  - eq. to CodeCommit
+  - no pull requests
+  - can sync with GitHub, ..
+  - integration with Stackdriver debugger
+  - pay per active user + GB/month storage
+- Cloud Build
+  - builds, tests and deploys code (CI/CD)
+  - eq. to CodeBuild
+  - native support for Dockerfile (incl. vuln. scan)
+  - can push to GCR or export to GCS
+  - pay per minute of build time (120m free/day)
+- Container Registry
+  - regional or multi-regional
+  - private Docker registry (based on GCS)
+  - eq. to ECR
+  - integrates with IAM, Cloud Build, Stackdriver Logs
+  - supports Docker v2 API
+  - pay for (GCS) storage
+- Cloud Endpoints
+  - handles authZ, monitoring, logging and keys for GCP APIs
+  - eq. to API Gateway
+  - based on nginx
+  - uses JWT for claims
+  - can transcode REST to gRPC
+  - pay per API call
+- Apigee
+  - API management platform
+  - eq. to API Gateway
+  - authenticates via OAuth, SAML, LDAP, ..
+  - supports quota, throttling, API version mgmt, ..
+  - team & business tier: flat monthly rate
+  - enterprise tier
+- Test Lab for Android
+  - running test matrixes across Android devices
+  - eq. to Device Farm
+  - robo test captures log files, screenshots, etc.
